@@ -1,0 +1,64 @@
+# DaSEH Project
+
+## Data Used
+
+I am using USGS pesticide estimate data, Census Bureau data on U.S. county boundaries, and historical heat records in the U.S. from X (). 
+
+USGS Estimated Annual Agricultural Pesticide Use for Counties of the Conterminous United States, 2013-2017 (ver. 2.0, May 2020) data were obtained from here: https://www.sciencebase.gov/catalog/item/5e95c12282ce172707f2524e. Cartographic Boundary Files from the U.S Census Bureau were obtained from here for the year 2013: https://www.census.gov/geographies/mapping-files/time-series/geo/carto-boundary-file.2013.html#list-tab-1556094155.
+
+
+
+```{r}
+
+```
+
+**describe** what your data looks like and **where** you got it. Identify what the variables and samples are, or point to a data dictionary. Describe how the data was originally created. 
+
+
+# Data Cleaning/Wrangling
+
+Perform any data subsetting, cleaning, or manipulation methods that were described in this course on your data. Examples are: renaming the columns, recoding values, reshaping the data, filtering the data etc. 
+
+You might also research other methods to include here, especially if your data is very unique.
+
+```{r}
+
+```
+
+
+# Data Visualization
+
+Create some visualizations of your data using the esquisse app or the ggplot2 package.
+
+```{r}
+
+```
+
+
+# Data Analysis
+
+Perform a **simple analysis** of your data. This can involve summarizing the data to describe aspects about it (quartiles, means, range etc.) or a simple statistical test. 
+
+Don't forget to describe what analysis you performed and why. Provide some simple **interpretation** about what your analysis might indicate about your data.
+
+```{r}
+
+```
+
+
+# Please include additional sections as desired.
+
+```{r}
+
+```
+
+
+# Versions
+
+Include some information about the version of R and the packages you are using by running sessionInfo().
+
+```{r}
+sessionInfo()
+```
+
+Render your document to an html or pdf using the "Knit" button.
