@@ -1,39 +1,258 @@
+---
+title: "DaSEH Project"
+output: html_document
+---
+
 # DaSEH Project
+
+```{r clear-env, include=FALSE}
+# Clear environment
+rm(list = ls(all = TRUE))
+if (!is.null(sessionInfo()$otherPkgs)) {
+  res <- suppressWarnings(
+    lapply(paste('package:', names(sessionInfo()$otherPkgs), sep=""),
+           detach, character.only=TRUE, unload=TRUE, force=TRUE))
+}
+```
+
+```{r load-install-pkg,include=FALSE}
+# Load packages, installing if needed
+if (!requireNamespace("pacman", quietly = TRUE))
+  install.packages("pacman")
+pacman::p_load(
+  RColorBrewer,
+  tidyr,
+  tidyverse,
+  ggplot2,
+  MetBrewer,
+  stringr,
+  ggpubr,
+  here,
+  sf,
+  data.table,
+  terra,
+  leaflet
+)
+```
 
 ## Data Used
 
-I am using USGS pesticide estimate data, Census Bureau data on U.S. county boundaries, and historical heat records in the U.S. from X (). 
+I am using USGS pesticide estimate data, Census Bureau data on U.S. county boundaries, and historical heat records in the U.S. from PRISM. 
 
-USGS Estimated Annual Agricultural Pesticide Use for Counties of the Conterminous United States, 2013-2017 (ver. 2.0, May 2020) data were obtained from here: https://www.sciencebase.gov/catalog/item/5e95c12282ce172707f2524e. Cartographic Boundary Files from the U.S Census Bureau were obtained from here for the year 2013: https://www.census.gov/geographies/mapping-files/time-series/geo/carto-boundary-file.2013.html#list-tab-1556094155.
+USGS Estimated Annual Agricultural Pesticide Use for Counties of the Conterminous United States, 2013-2017 (ver. 2.0, May 2020) data were obtained from here: https://www.sciencebase.gov/catalog/item/5e95c12282ce172707f2524e. Cartographic Boundary Files from the U.S Census Bureau were obtained from here for the year 2013: https://www.census.gov/geographies/mapping-files/time-series/geo/carto-boundary-file.2013.html#list-tab-1556094155. PRISM daily mean temperature data for 2013 was obtained from Robbie Parks' Github (https://github.com/rmp15/PRISM-grids-into-FIPS-ZIP-censustract-USA/tree/main/output/fips/tmean). Citation for this work is Tuholske, C., Lynch, V.D., Spriggs, R. et al. Hazardous heat exposure among incarcerated people in the United States. Nat Sustain 7, 394–398 (2024). https://doi.org/10.1038/s41893-024-01293-y. Data dictionaries can be found at the above links.
 
+```{r load-raw-data}
+usgs_ests <- fread(here("mapping data/EPest_county_estimates_2013_2017_v2.txt"))
+usgs_gly <- usgs_ests %>% filter(COMPOUND=="GLYPHOSATE")
+glimpse(usgs_gly)
+dim(usgs_gly)
 
+us_county_2013 <- st_read(here("mapping data/cb_2013_us_county_20m/cb_2013_us_county_20m.shp"))
+glimpse(us_county_2013)
+dim(us_county_2013)
 
-```{r}
+prism_county_2013 <- readRDS(here("mapping data/weighted_area_raster_fips_tmean_daily_2013.rds"))
+glimpse(prism_county_2013)
+dim(prism_county_2013)
 
+##TO-DO: LOAD ALL 2018 DATA, COMPARE WITH 2013 DATA
 ```
 
-**describe** what your data looks like and **where** you got it. Identify what the variables and samples are, or point to a data dictionary. Describe how the data was originally created. 
-
+The USGS glyphosate data has 15314 rows and 6 columns. The US County shapefile data has 3221 rows and 10 columns. The PRISM county-level data for 2013 has 1134420 rows and 6 columns. These data are connected by FIPS code, which is comprised of a two-digit state code and then a three digit county code. The USGS pesticide estimate data contains a low and high estimate (EPEST_LOW_KG and EPEST_HIGH_KG).
 
 # Data Cleaning/Wrangling
 
 Perform any data subsetting, cleaning, or manipulation methods that were described in this course on your data. Examples are: renaming the columns, recoding values, reshaping the data, filtering the data etc. 
 
-You might also research other methods to include here, especially if your data is very unique.
+Create combined FIPS code (two-digit state plus three-digit county in format 01001).
 
-```{r}
+```{r create-fips-codes}
+usgs_gly <- usgs_gly %>% mutate(STATE_FIPS_CODE =
+                              str_pad(as.character(usgs_gly$STATE_FIPS_CODE),
+                              2, pad = "0"),
+                COUNTY_FIPS_CODE =                  
+                  str_pad(as.character(usgs_gly$COUNTY_FIPS_CODE),
+                              3, pad = "0"),
+                fips = as.factor(paste0(STATE_FIPS_CODE, COUNTY_FIPS_CODE)))
 
+us_county_2013 <- us_county_2013 %>% mutate(fips = 
+                                  as.factor(paste0(STATEFP, COUNTYFP)))
 ```
 
+``` {r date-temp-clean}
+prism_county_2013 <- prism_county_2013 %>% mutate(date=as.Date(date,
+                                              format="%d/%m/%Y")) %>%
+  select(-c(day,month, year))
+
+group_by(prism_county_2013, fips) %>% tally()
+#got 3108 fips codes
+
+prism_01001 <- prism_county_2013 %>% filter(fips=="01001")
+quantile(prism_01001$tmean, probs = 0.85)
+prism_12033 <- prism_county_2013 %>% filter(fips=="12033")
+quantile(prism_12033$tmean, probs = 0.85)
+
+
+prism_county_2013_85s <- prism_county_2013 %>% group_by(fips) %>% mutate(tmean85_fullyear = quantile(tmean, probs=0.85, na.rm=TRUE)) %>% 
+  filter(between(date, as.Date('2013-04-30'), as.Date('2022-09-01'))) %>%
+  mutate(tmean85_spray = quantile(tmean, probs=0.85, na.rm=TRUE)) %>% 
+  summarise(tmean85_fullyear=mean(tmean85_fullyear),
+            tmean85_spray=mean(tmean85_spray))
+```
+
+```{r join-data-calc-area}
+merged <- left_join(us_county_2013, prism_county_2013_85s) %>% 
+  left_join(usgs_gly) %>% filter(STATEFP != "02" & STATEFP != "15" &
+                                   STATEFP != "72") %>%
+  mutate(gly_per_land_low = EPEST_LOW_KG/(ALAND/1e+6),
+         gly_per_land_high = EPEST_HIGH_KG/(ALAND/1e+6),
+         gly_per_totalarea_low = EPEST_LOW_KG/((ALAND+AWATER)/1e+6),
+         gly_per_totalarea_high = EPEST_HIGH_KG/((ALAND+AWATER)/1e+6))
+
+#cleaned merged data so that it's just for conterminous U.S. (not AK which is 02, HI which is 15, or PR which is )
+```
 
 # Data Visualization
 
 Create some visualizations of your data using the esquisse app or the ggplot2 package.
 
-```{r}
+```{r plot-gly, figures-side, fig.show="hold", out.width="50%"}
+gly_us_low <- ggplot() +
+  geom_sf(data = merged, aes(fill = EPEST_LOW_KG), linetype=0) +
+  ggtitle("Glyphosate per County (Low Est.)") +
+  theme_void(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    rect = element_blank()
+  ) +
+  scale_fill_gradientn("Glyphosate usage \n(kg)",
+                       colors = met.brewer("Tam"),
+                       na.value = "grey50")
 
+gly_us_high <- ggplot() +
+  geom_sf(data = merged, aes(fill = EPEST_HIGH_KG), linetype=0) +
+  ggtitle("Glyphosate per County (High Est.)") +
+  theme_void(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    rect = element_blank()
+  ) +
+  scale_fill_gradientn("Glyphosate usage \n(kg)",
+                       colors = met.brewer("Tam"),
+                       na.value = "grey50")
+
+plot(gly_us_low)
+plot(gly_us_high)
+
+gly_us_low_larea <- ggplot() +
+  geom_sf(data = merged, aes(fill = gly_per_land_low), linetype=0) +
+  ggtitle("Glyphosate per Land Area (Low Est.)") +
+  theme_void(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    rect = element_blank()
+  ) +
+  scale_fill_gradientn("Glyphosate usage \n(kg/km^2)",
+                       colors = met.brewer("Tam"),
+                       na.value = "grey50")
+
+gly_us_high_larea <- ggplot() +
+  geom_sf(data = merged, aes(fill = gly_per_land_high), linetype=0) +
+  ggtitle("Glyphosate per Land Area (High Est.)") +
+  theme_void(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    rect = element_blank()
+  ) +
+  scale_fill_gradientn("Glyphosate usage \n(kg/km^2)",
+                       colors = met.brewer("Tam"),
+                       na.value = "grey50")
+
+plot(gly_us_low_larea)
+plot(gly_us_high_larea)
+
+gly_us_low_tarea <- ggplot() +
+  geom_sf(data = merged, aes(fill = gly_per_totalarea_low), linetype=0) +
+  ggtitle("Glyphosate per Total Area (Low Est.)") +
+  theme_void(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    rect = element_blank()
+  ) +
+  scale_fill_gradientn("Glyphosate usage \n(kg/km^2)",
+                       colors = met.brewer("Tam"),
+                       na.value = "grey50")
+
+gly_us_high_tarea <- ggplot() +
+  geom_sf(data = merged, aes(fill = gly_per_totalarea_high), linetype=0) +
+  ggtitle("Glyphosate per Total Area (High Est.)") +
+  theme_void(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    rect = element_blank()
+  ) +
+  scale_fill_gradientn("Glyphosate usage \n(kg/km^2)",
+                       colors = met.brewer("Tam"),
+                       na.value = "grey50")
+plot(gly_us_low_tarea)
+plot(gly_us_high_tarea)
 ```
 
+I created plots for temperature during spray season and during the full year.
+``` {r plot-temp, figures-side, fig.show="hold", out.width="50%"}
+temp85_plot <- ggplot() +
+  geom_sf(data = merged, aes(fill = tmean85_spray), linetype=0) +
+  ggtitle("85th Percentile Mean Temp. by County", 
+          subtitle="Conterminous U.S.") +  theme_void(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    plot.subtitle = element_text(colour="gray25", size=14,hjust = 0.5),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    rect = element_blank()
+  ) +
+  scale_fill_gradientn("Temperature (C)",
+                       colors = rev(met.brewer("Hiroshige")),
+                       na.value = "grey50")
+
+temp85_plot_f <- ggplot() +
+  geom_sf(data = merged, aes(fill = (tmean85_spray*9/5+32)), linetype=0) +
+  ggtitle("85th Percentile Mean Temp. by County", 
+          subtitle="Conterminous U.S.") +
+  theme_void(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    plot.subtitle = element_text(colour="gray25", size=14,hjust = 0.5),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    rect = element_blank()
+  ) +
+  scale_fill_gradientn("Temperature (F)",
+                       colors = rev(met.brewer("Hiroshige")),
+                       na.value = "grey50")
+plot(temp85_plot)
+plot(temp85_plot_f)
+```
 
 # Data Analysis
 
@@ -41,10 +260,43 @@ Perform a **simple analysis** of your data. This can involve summarizing the dat
 
 Don't forget to describe what analysis you performed and why. Provide some simple **interpretation** about what your analysis might indicate about your data.
 
-```{r}
+```{r spatial-analysis}
+#find areas that have 85th percentile mean daily temp of 80 degrees F or higher
+hot_merged <- merged %>% filter(tmean85_spray>=26.66)
+hot_plot <- ggplot() +
+  geom_sf(data = hot_merged, aes(fill = gly_per_land_low), linetype=0) +
+  ggtitle("Glyphosate per Land Area", 
+          subtitle="Hot Counties") +  theme_void(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    plot.subtitle = element_text(colour="gray25", size=14,hjust = 0.5),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    rect = element_blank()
+  ) +
+  scale_fill_gradientn("Glyphosate usage",
+                       colors = met.brewer("Tam"),
+                       na.value = "grey50")
+plot(hot_plot)
 
+hot_leaflet <- hot_merged %>%
+    st_transform(crs = "+init=epsg:4326") %>%
+    leaflet(width = "100%") %>%
+    addProviderTiles(provider = "CartoDB.Voyager") %>%
+    addPolygons(
+             stroke = FALSE,
+             smoothFactor = 0,
+             fillOpacity = 0.2,
+             fillColor= ~
+               colorNumeric("YlOrRd",gly_per_land_low)(gly_per_land_low)) %>%
+  addLegend(pal = colorNumeric("YlOrRd", hot_merged$gly_per_land_low),  # Define color palette
+        values = hot_merged$gly_per_land_low,  # Values to map
+        title = "Glyphosate Usage (kg/km^2)",  # Legend title
+        position = "bottomright"  # Position of the legend
+    )
+hot_leaflet
 ```
-
 
 # Please include additional sections as desired.
 
@@ -61,4 +313,3 @@ Include some information about the version of R and the packages you are using b
 sessionInfo()
 ```
 
-Render your document to an html or pdf using the "Knit" button.
