@@ -1,0 +1,425 @@
+---
+title: "DaSEH Lightning Talk"
+author: "Cecilia Martindale"
+date: "2024-07-31"
+output: ioslides_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# Load packages, installing if needed
+if (!requireNamespace("pacman", quietly = TRUE))
+  install.packages("pacman")
+pacman::p_load(
+  RColorBrewer,
+  tidyr,
+  tidyverse,
+  ggplot2,
+  MetBrewer,
+  stringr,
+  ggpubr,
+  here,
+  sf,
+  data.table,
+  terra,
+  leaflet,
+  patchwork
+)
+
+usgs_ests <- fread(here("mapping data/EPest_county_estimates_2013_2017_v2.txt"))
+usgs_gly <- usgs_ests %>% filter(COMPOUND=="GLYPHOSATE")
+usgs_gly_2013 <- usgs_gly %>% filter(YEAR==2013)
+usgs_gly_2014 <- usgs_gly %>% filter(YEAR==2014)
+usgs_gly_2015 <- usgs_gly %>% filter(YEAR==2015)
+usgs_gly_2016 <- usgs_gly %>% filter(YEAR==2016)
+usgs_gly_2017 <- usgs_gly %>% filter(YEAR==2017)
+
+glimpse(usgs_gly)
+dim(usgs_gly)
+
+us_county_2013 <- st_read(here("mapping data/cb_2013_us_county_20m/cb_2013_us_county_20m.shp"))
+glimpse(us_county_2013)
+dim(us_county_2013)
+
+prism_county_2013 <- readRDS(here("mapping data/weighted_area_raster_fips_tmean_daily_2013.rds"))
+glimpse(prism_county_2013)
+dim(prism_county_2013)
+
+prism_county_2014 <- readRDS(here("mapping data/weighted_area_raster_fips_tmean_daily_2014.rds"))
+
+prism_county_2015 <- readRDS(here("mapping data/weighted_area_raster_fips_tmean_daily_2015.rds"))
+
+prism_county_2016 <- readRDS(here("mapping data/weighted_area_raster_fips_tmean_daily_2016.rds"))
+
+prism_county_2017 <- readRDS(here("mapping data/weighted_area_raster_fips_tmean_daily_2017.rds"))
+
+usgs_gly_2013 <- usgs_gly_2013 %>% mutate(STATE_FIPS_CODE =
+                              str_pad(as.character(usgs_gly_2013$STATE_FIPS_CODE),
+                              2, pad = "0"),
+                COUNTY_FIPS_CODE =                  
+                  str_pad(as.character(usgs_gly_2013$COUNTY_FIPS_CODE),
+                              3, pad = "0"),
+                fips = as.factor(paste0(STATE_FIPS_CODE, COUNTY_FIPS_CODE)))
+
+usgs_gly_2014 <- usgs_gly_2014 %>% mutate(STATE_FIPS_CODE =
+                              str_pad(as.character(usgs_gly_2014$STATE_FIPS_CODE),
+                              2, pad = "0"),
+                COUNTY_FIPS_CODE =                  
+                  str_pad(as.character(usgs_gly_2014$COUNTY_FIPS_CODE),
+                              3, pad = "0"),
+                fips = as.factor(paste0(STATE_FIPS_CODE, COUNTY_FIPS_CODE)))
+
+usgs_gly_2015 <- usgs_gly_2015 %>% mutate(STATE_FIPS_CODE =
+                              str_pad(as.character(usgs_gly_2015$STATE_FIPS_CODE),
+                              2, pad = "0"),
+                COUNTY_FIPS_CODE =                  
+                  str_pad(as.character(usgs_gly_2015$COUNTY_FIPS_CODE),
+                              3, pad = "0"),
+                fips = as.factor(paste0(STATE_FIPS_CODE, COUNTY_FIPS_CODE)))
+
+usgs_gly_2016 <- usgs_gly_2016 %>% mutate(STATE_FIPS_CODE =
+                              str_pad(as.character(usgs_gly_2016$STATE_FIPS_CODE),
+                              2, pad = "0"),
+                COUNTY_FIPS_CODE =                  
+                  str_pad(as.character(usgs_gly_2016$COUNTY_FIPS_CODE),
+                              3, pad = "0"),
+                fips = as.factor(paste0(STATE_FIPS_CODE, COUNTY_FIPS_CODE)))
+
+usgs_gly_2017 <- usgs_gly_2017 %>% mutate(STATE_FIPS_CODE =
+                              str_pad(as.character(usgs_gly_2017$STATE_FIPS_CODE),
+                              2, pad = "0"),
+                COUNTY_FIPS_CODE =                  
+                  str_pad(as.character(usgs_gly_2017$COUNTY_FIPS_CODE),
+                              3, pad = "0"),
+                fips = as.factor(paste0(STATE_FIPS_CODE, COUNTY_FIPS_CODE)))
+
+us_county_2013 <- us_county_2013 %>% mutate(fips = 
+                                  as.factor(paste0(STATEFP, COUNTYFP)))
+
+#2013
+prism_county_2013 <- prism_county_2013 %>% mutate(date=as.Date(date,
+                                              format="%d/%m/%Y")) %>%
+  select(-c(day,month, year))
+
+group_by(prism_county_2013, fips) %>% tally()
+#got 3108 fips codes
+
+prism_01001 <- prism_county_2013 %>% filter(fips=="01001")
+quantile(prism_01001$tmean, probs = 0.85)
+prism_12033 <- prism_county_2013 %>% filter(fips=="12033")
+quantile(prism_12033$tmean, probs = 0.85)
+
+prism_county_2013_85s <- prism_county_2013 %>% group_by(fips) %>% mutate(tmean85_fullyear = quantile(tmean, probs=0.85, na.rm=TRUE)) %>% 
+  filter(between(date, as.Date('2013-04-30'), as.Date('2013-09-01'))) %>%
+  mutate(tmean85_spray = quantile(tmean, probs=0.85, na.rm=TRUE)) %>% 
+  summarise(tmean85_fullyear=mean(tmean85_fullyear),
+            tmean85_spray=mean(tmean85_spray))
+
+#2014
+prism_county_2014 <- prism_county_2014 %>% mutate(date=as.Date(date,
+                                              format="%d/%m/%Y")) %>%
+  select(-c(day,month, year))
+
+group_by(prism_county_2014, fips) %>% tally()
+#got 3108 fips codes
+
+prism_01001 <- prism_county_2014 %>% filter(fips=="01001")
+quantile(prism_01001$tmean, probs = 0.85)
+prism_12033 <- prism_county_2014 %>% filter(fips=="12033")
+quantile(prism_12033$tmean, probs = 0.85)
+
+prism_county_2014_85s <- prism_county_2014 %>% group_by(fips) %>% mutate(tmean85_fullyear = quantile(tmean, probs=0.85, na.rm=TRUE)) %>% 
+  filter(between(date, as.Date('2014-04-30'), as.Date('2014-09-01'))) %>%
+  mutate(tmean85_spray = quantile(tmean, probs=0.85, na.rm=TRUE)) %>% 
+  summarise(tmean85_fullyear=mean(tmean85_fullyear),
+            tmean85_spray=mean(tmean85_spray))
+
+#2015
+prism_county_2015 <- prism_county_2015 %>% mutate(date=as.Date(date,
+                                              format="%d/%m/%Y")) %>%
+  select(-c(day,month, year))
+
+group_by(prism_county_2015, fips) %>% tally()
+#got 3108 fips codes
+
+prism_county_2015_85s <- prism_county_2015 %>% group_by(fips) %>% mutate(tmean85_fullyear = quantile(tmean, probs=0.85, na.rm=TRUE)) %>% 
+  filter(between(date, as.Date('2015-04-30'), as.Date('2015-09-01'))) %>%
+  mutate(tmean85_spray = quantile(tmean, probs=0.85, na.rm=TRUE)) %>% 
+  summarise(tmean85_fullyear=mean(tmean85_fullyear),
+            tmean85_spray=mean(tmean85_spray))
+
+#2016
+prism_county_2016 <- prism_county_2016 %>% mutate(date=as.Date(date,
+                                              format="%d/%m/%Y")) %>%
+  select(-c(day,month, year))
+
+group_by(prism_county_2016, fips) %>% tally()
+#got 3108 fips codes
+
+prism_county_2016_85s <- prism_county_2016 %>% group_by(fips) %>% mutate(tmean85_fullyear = quantile(tmean, probs=0.85, na.rm=TRUE)) %>% 
+  filter(between(date, as.Date('2016-04-30'), as.Date('2016-09-01'))) %>%
+  mutate(tmean85_spray = quantile(tmean, probs=0.85, na.rm=TRUE)) %>% 
+  summarise(tmean85_fullyear=mean(tmean85_fullyear),
+            tmean85_spray=mean(tmean85_spray))
+
+#2017
+prism_county_2017 <- prism_county_2017 %>% mutate(date=as.Date(date,
+                                              format="%d/%m/%Y")) %>%
+  select(-c(day,month, year))
+
+group_by(prism_county_2017, fips) %>% tally()
+#got 3108 fips codes
+
+prism_county_2017_85s <- prism_county_2017 %>% group_by(fips) %>% mutate(tmean85_fullyear = quantile(tmean, probs=0.85, na.rm=TRUE)) %>% 
+  filter(between(date, as.Date('2017-04-30'), as.Date('2017-09-01'))) %>%
+  mutate(tmean85_spray = quantile(tmean, probs=0.85, na.rm=TRUE)) %>% 
+  summarise(tmean85_fullyear=mean(tmean85_fullyear),
+            tmean85_spray=mean(tmean85_spray))
+
+merged_2013 <- left_join(us_county_2013, prism_county_2013_85s) %>% 
+  left_join(usgs_gly_2013) %>% filter(STATEFP != "02" & STATEFP != "15" &
+                                   STATEFP != "72") %>%
+  mutate(gly_per_land_low = EPEST_LOW_KG/(ALAND/1e+6),
+         gly_per_land_high = EPEST_HIGH_KG/(ALAND/1e+6),
+         gly_per_totalarea_low = EPEST_LOW_KG/((ALAND+AWATER)/1e+6),
+         gly_per_totalarea_high = EPEST_HIGH_KG/((ALAND+AWATER)/1e+6))
+
+merged_2014 <- left_join(us_county_2013, prism_county_2014_85s) %>% 
+  left_join(usgs_gly_2014) %>% filter(STATEFP != "02" & STATEFP != "15" &
+                                   STATEFP != "72") %>%
+  mutate(gly_per_land_low = EPEST_LOW_KG/(ALAND/1e+6),
+         gly_per_land_high = EPEST_HIGH_KG/(ALAND/1e+6),
+         gly_per_totalarea_low = EPEST_LOW_KG/((ALAND+AWATER)/1e+6),
+         gly_per_totalarea_high = EPEST_HIGH_KG/((ALAND+AWATER)/1e+6))
+
+merged_2015 <- left_join(us_county_2013, prism_county_2015_85s) %>% 
+  left_join(usgs_gly_2015) %>% filter(STATEFP != "02" & STATEFP != "15" &
+                                   STATEFP != "72") %>%
+  mutate(gly_per_land_low = EPEST_LOW_KG/(ALAND/1e+6),
+         gly_per_land_high = EPEST_HIGH_KG/(ALAND/1e+6),
+         gly_per_totalarea_low = EPEST_LOW_KG/((ALAND+AWATER)/1e+6),
+         gly_per_totalarea_high = EPEST_HIGH_KG/((ALAND+AWATER)/1e+6))
+
+merged_2016 <- left_join(us_county_2013, prism_county_2016_85s) %>% 
+  left_join(usgs_gly_2016) %>% filter(STATEFP != "02" & STATEFP != "15" &
+                                   STATEFP != "72") %>%
+  mutate(gly_per_land_low = EPEST_LOW_KG/(ALAND/1e+6),
+         gly_per_land_high = EPEST_HIGH_KG/(ALAND/1e+6),
+         gly_per_totalarea_low = EPEST_LOW_KG/((ALAND+AWATER)/1e+6),
+         gly_per_totalarea_high = EPEST_HIGH_KG/((ALAND+AWATER)/1e+6))
+
+merged_2017 <- left_join(us_county_2013, prism_county_2017_85s) %>% 
+  left_join(usgs_gly_2017) %>% filter(STATEFP != "02" & STATEFP != "15" &
+                                   STATEFP != "72") %>%
+  mutate(gly_per_land_low = EPEST_LOW_KG/(ALAND/1e+6),
+         gly_per_land_high = EPEST_HIGH_KG/(ALAND/1e+6),
+         gly_per_totalarea_low = EPEST_LOW_KG/((ALAND+AWATER)/1e+6),
+         gly_per_totalarea_high = EPEST_HIGH_KG/((ALAND+AWATER)/1e+6))
+#cleaned merged data so that it's just for conterminous U.S. (not AK which is 02, HI which is 15, or PR which is )
+
+gly_us_low <- ggplot() +
+  geom_sf(data = merged_2013, aes(fill = EPEST_LOW_KG), linetype=0) +
+  ggtitle("2013 Glyphosate per County (Low Est.)") +
+  theme_void(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    rect = element_blank()
+  ) +
+  scale_fill_gradientn("Glyphosate usage \n(kg)",
+                       colors = met.brewer("Tam"),
+                       na.value = "grey50")
+
+gly_us_high <- ggplot() +
+  geom_sf(data = merged_2013, aes(fill = EPEST_HIGH_KG), linetype=0) +
+  ggtitle("2013 Glyphosate per County (High Est.)") +
+  theme_void(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    rect = element_blank()
+  ) +
+  scale_fill_gradientn("Glyphosate usage \n(kg)",
+                       colors = met.brewer("Tam"),
+                       na.value = "grey50")
+
+gly_us_low_larea <- ggplot() +
+  geom_sf(data = merged_2013, aes(fill = gly_per_land_low), linetype=0) +
+  ggtitle("2013 Glyphosate per Land Area (Low Est.)") +
+  theme_void(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    rect = element_blank()
+  ) +
+  scale_fill_gradientn("Glyphosate usage \n(kg/km^2)",
+                       colors = met.brewer("Tam"),
+                       na.value = "grey50")
+
+gly_us_high_larea <- ggplot() +
+  geom_sf(data = merged_2013, aes(fill = gly_per_land_high), linetype=0) +
+  ggtitle("2013 Glyphosate per Land Area (High Est.)") +
+  theme_void(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    rect = element_blank()
+  ) +
+  scale_fill_gradientn("Glyphosate usage \n(kg/km^2)",
+                       colors = met.brewer("Tam"),
+                       na.value = "grey50")
+
+
+temp85_plot <- ggplot() +
+  geom_sf(data = merged_2013, aes(fill = tmean85_spray), linetype=0) +
+  ggtitle("85th Percentile Mean Temp. by County (2013)", 
+          subtitle="Conterminous U.S.") +  theme_void(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    plot.subtitle = element_text(colour="gray25", size=14,hjust = 0.5),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    rect = element_blank()
+  ) +
+  scale_fill_gradientn("Temperature (C)",
+                       colors = rev(met.brewer("Hiroshige")),
+                       na.value = "grey50")
+
+temp85_plot_f_2013 <- ggplot() +
+  geom_sf(data = merged_2013, aes(fill = (tmean85_spray*9/5+32)), linetype=0) +
+  ggtitle("85th Percentile Mean Temp. by County (2013)", 
+          subtitle="Conterminous U.S.") +
+  theme_void(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    plot.subtitle = element_text(colour="gray25", size=14,hjust = 0.5),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    rect = element_blank()
+  ) +
+  scale_fill_gradientn("Temperature (F)",
+                       colors = rev(met.brewer("Hiroshige")),
+                       na.value = "grey50")
+
+temp85_plot <- ggplot() +
+  geom_sf(data = merged_2017, aes(fill = tmean85_spray), linetype=0) +
+  ggtitle("85th Percentile Mean Temp. by County (2017)", 
+          subtitle="Conterminous U.S.") +  theme_void(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    plot.subtitle = element_text(colour="gray25", size=14,hjust = 0.5),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    rect = element_blank()
+  ) +
+  scale_fill_gradientn("Temperature (C)",
+                       colors = rev(met.brewer("Hiroshige")),
+                       na.value = "grey50")
+
+temp85_plot_f_2017 <- ggplot() +
+  geom_sf(data = merged_2017, aes(fill = (tmean85_spray*9/5+32)), linetype=0) +
+  ggtitle("85th Percentile Mean Temp. by County (2017)", 
+          subtitle="Conterminous U.S.") +
+  theme_void(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    plot.subtitle = element_text(colour="gray25", size=14,hjust = 0.5),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    rect = element_blank()
+  ) +
+  scale_fill_gradientn("Temperature (F)",
+                       colors = rev(met.brewer("Hiroshige")),
+                       na.value = "grey50")
+
+hot_merged_2013 <- merged_2013 %>% filter(tmean85_spray>=26.66)
+hot_plot <- ggplot() +
+  geom_sf(data = hot_merged_2013, aes(fill = gly_per_land_low), linetype=0) +
+  ggtitle("Glyphosate per Land Area", 
+          subtitle="Hot Counties") +  theme_void(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    plot.subtitle = element_text(colour="gray25", size=14,hjust = 0.5),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    rect = element_blank()
+  ) +
+  scale_fill_gradientn("Glyphosate usage",
+                       colors = met.brewer("Tam"),
+                       na.value = "grey50")
+
+hot_leaflet <- hot_merged_2013 %>%
+    st_transform(crs = "+init=epsg:4326") %>%
+    leaflet(width = "100%") %>%
+    addProviderTiles(provider = "CartoDB.Voyager") %>%
+    addPolygons(
+             stroke = FALSE,
+             smoothFactor = 0,
+             fillOpacity = 0.5,
+             fillColor= ~
+               colorNumeric("YlOrRd",gly_per_land_low)(gly_per_land_low)) %>%
+  addLegend(pal = colorNumeric("YlOrRd", hot_merged_2013$gly_per_land_low),  # Define color palette
+        values = hot_merged_2013$gly_per_land_low,  # Values to map
+        title = "Glyphosate Usage (kg/km^2)",  # Legend title
+        position = "bottomright",  # Position of the legend
+        na.label = "No data"
+    )
+```
+
+## Question I am working on/problem I am trying to solve
+
+- Characterizing glyphosate levels in U.S. population 
+- Relationship with environmental factors like temperature
+- What areas of the U.S. have both high heat and high glyphosate usage?
+
+## Dataset source/description
+
+- USGS Estimated Annual Agricultural Pesticide Use for Counties of the Conterminous United States, 2013-2017 (ver. 2.0, May 2020) data were obtained from here: https://www.sciencebase.gov/catalog/item/5e95c12282ce172707f2524e
+
+- Cartographic Boundary Files from the U.S Census Bureau were obtained from here for the year 2013: https://www.census.gov/geographies/mapping-files/time-series/geo/carto-boundary-file.2013.html#list-tab-1556094155
+
+- PRISM daily mean temperature data for 2013 was obtained from Robbie Parks' Github: https://github.com/rmp15/PRISM-grids-into-FIPS-ZIP-censustract-USA/tree/main/output/fips/tmean
+
+## Planned methods
+
+- Mapping county-level glyphosate usage
+- Mapping 85th percentile of county-level mean daily temperatures
+- Filtering temperatures where 85th percentile mean daily temperature is 80 or higher
+- Mapping glyphosate usage for just those hot counties
+
+## Unexpected problems & how I solved them
+
+- Glyphosate was just total amounts, not corrected for land area! So I mutated the variable to divide glyphosate by area (resulting in kg of glyphosate/km^2).
+
+- I realized 85th percentile mean daily temp over the whole year was not as relevant as temperatures during spray season, so I had to calculate for just the spray season (approximately 1 May to 1 September). HOWEVER, spraying season will vary by growing zone and crop, so for my final analysis I need to tailor this much more.
+
+## Glyphosate Usage in U.S.
+```{r gly-use}
+gly_us_low / gly_us_low_larea
+```
+
+## 85th Percentile Temperatures
+```{r temps}
+temp85_plot_f_2013 / temp85_plot_f_2017
+```
+
+## Glyphosate Usage in the Hottest Counties
+
+- Used leaflet to create a zoomable map!
+```{r hot-leaflet}
+hot_leaflet
+```
